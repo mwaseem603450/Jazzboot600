@@ -9,7 +9,7 @@ ZIP_EXTS = [".zip", ".rar", ".7z", ".tar", ".gz"]
 MAX_SIZE_MB = 1990
 
 BOTS = [
-    {"token": "8350099407:AAEAX6NzIykESMj50CnduDAwngfHW1ER-oM", "chat_id": 7144917062, "state_file": "state1.json"},
+    {"token": "8535180967:AAF0WHm09NjKiFUY92aPfYV34ZpPIVc7n-g", "chat_id": 8586543259, "state_file": "state1.json"},
 ]
 
 def is_youtube(url):
