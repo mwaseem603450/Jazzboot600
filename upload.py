@@ -8,7 +8,6 @@ VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", "
 ZIP_EXTS = [".zip", ".rar", ".7z", ".tar", ".gz"]
 MAX_SIZE_MB = 1990
 
-# Yahan naya Token aur Chat ID update kar diya gaya hai
 BOTS = [
     {"token": "8916472332:AAGQRdFGjvgNyfsqqUDhaKvav4ZNG8S_kPk", "chat_id": 8350099407, "state_file": "state1.json"},
 ]
