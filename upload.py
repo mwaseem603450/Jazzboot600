@@ -1,4 +1,4 @@
-import os, re, time, threading, queue, subprocess, requests, zipfile, telebot
+hereimport os, re, time, threading, queue, subprocess, requests, zipfile, telebot
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
@@ -332,7 +332,7 @@ class BotInstance:
     # ─── Jazz Drive Upload ────────────────────────────────────────────────────
 
     def jazz_drive_upload(self, filename, folder_name=""):
-        """Upload file to JazzDrive. Returns uploaded filename (for share link lookup)."""
+        """Upload file to JazzDrive."""
         uploaded_name = os.path.basename(filename)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=BROWSER_ARGS)
@@ -406,19 +406,6 @@ class BotInstance:
                 if not upload_done:
                     self.take_screenshot(page, f"Final {elapsed}s")
 
-                # ── [NEW] Get share link ──────────────────────────────────
-                share_link = self._get_share_link_from_page(page, uploaded_name)
-                if share_link:
-                    self.msg(f"Share link:\n{share_link}")
-                else:
-                    # Try fresh page load to find the file
-                    time.sleep(3)
-                    share_link = self._get_share_link_fresh(ctx, uploaded_name, folder_name)
-                    if share_link:
-                        self.msg(f"Share link:\n{share_link}")
-                    else:
-                        self.msg("Share link nahi mila (manually check karo)")
-
                 ctx.storage_state(path=self.state_file)
                 return uploaded_name
 
@@ -427,157 +414,6 @@ class BotInstance:
                 return None
             finally:
                 browser.close()
-
-    # ─── Share Link Helpers (Exact selectors from DevTools inspection) ──────────
-
-    def _get_share_link_from_page(self, page, filename):
-        """
-        Exact flow from DevTools inspection:
-        1. File select karo (checkbox click)
-        2. Top bar mein Share button click karo (aria-label="Share")
-        3. Dialog mein input[name="get-link-url"] se URL lo
-        """
-        try:
-            time.sleep(4)
-
-            # ── Step 1: Upload dialog band karo ──────────────────────────────
-            for dismiss in [
-                "button:has-text('Close')",
-                "button:has-text('Done')",
-                "button:has-text('X')",
-                "[aria-label='Close']",
-            ]:
-                try:
-                    btn = page.locator(dismiss).first
-                    if btn.is_visible(timeout=1500):
-                        btn.click()
-                        time.sleep(1)
-                        break
-                except:
-                    pass
-
-            # ── Step 2: File dhundo aur select karo ──────────────────────────
-            name_short = filename.rsplit(".", 1)[0][:25]
-            file_el = None
-            for sel in [
-                f"text={name_short}",
-                f"[title*='{name_short}']",
-                f"td:has-text('{name_short}')",
-                f"span:has-text('{name_short}')",
-            ]:
-                try:
-                    el = page.locator(sel).first
-                    if el.is_visible(timeout=3000):
-                        file_el = el
-                        break
-                except:
-                    pass
-
-            if not file_el:
-                return None
-
-            # File ke paas checkbox click karo (select karne ke liye)
-            file_el.click()
-            time.sleep(2)
-
-            # ── Step 3: Selection bar mein Share button click karo ────────────
-            # Image 1 se: aria-label="Share" wala button
-            share_clicked = False
-            for share_sel in [
-                "button[aria-label='Share']",
-                "[data-testid='ShareIcon']",
-                "button:has([data-testid='ShareIcon'])",
-                # Image 3 se: context menu ka Share option
-                "text=Share",
-            ]:
-                try:
-                    btn = page.locator(share_sel).first
-                    if btn.is_visible(timeout=3000):
-                        btn.click()
-                        share_clicked = True
-                        time.sleep(2)
-                        break
-                except:
-                    pass
-
-            if not share_clicked:
-                return None
-
-            # ── Step 4: Dialog se link lo ─────────────────────────────────────
-            # Image 2 se: input[name="get-link-url"] mein exact URL hota hai
-            return self._extract_link_from_dialog(page)
-
-        except Exception as e:
-            return None
-
-    def _get_share_link_fresh(self, ctx, filename, folder_name=""):
-        """
-        Fresh page pe navigate karke share link lo.
-        Fallback method.
-        """
-        page = ctx.new_page()
-        try:
-            page.goto("https://cloud.jazzdrive.com.pk/#folders", wait_until="networkidle", timeout=60000)
-            time.sleep(4)
-
-            if folder_name and folder_name.strip().upper() != "ROOT":
-                try:
-                    page.get_by_text(folder_name.strip(), exact=False).first.click(timeout=5000)
-                    time.sleep(3)
-                except:
-                    pass
-
-            return self._get_share_link_from_page(page, filename)
-        except:
-            return None
-        finally:
-            page.close()
-
-    def _extract_link_from_dialog(self, page):
-        """
-        Share dialog se URL nikalna.
-        Image 2 se exact selector: input[name="get-link-url"]
-        URL format: https://cloud.jazzdrive.com.pk/share/XXXXXXXX
-        """
-        try:
-            time.sleep(2)
-
-            # ── Exact selector from Image 2 ───────────────────────────────────
-            try:
-                inp = page.locator("input[name='get-link-url']").first
-                if inp.is_visible(timeout=4000):
-                    val = inp.input_value()
-                    if val and val.startswith("http"):
-                        return val
-            except:
-                pass
-
-            # ── Fallback: koi bhi readonly input jo jazzdrive share URL ho ────
-            try:
-                inputs = page.locator("input[readonly], input[type='text']").all()
-                for inp in inputs:
-                    try:
-                        if inp.is_visible(timeout=1000):
-                            val = inp.input_value()
-                            if val and "jazzdrive.com.pk/share/" in val:
-                                return val
-                    except:
-                        pass
-            except:
-                pass
-
-            # ── Fallback: page text mein share URL dhundo ─────────────────────
-            try:
-                body_text = page.inner_text("body")
-                urls = re.findall(r'https://cloud\.jazzdrive\.com\.pk/share/[A-Za-z0-9]+', body_text)
-                if urls:
-                    return urls[0]
-            except:
-                pass
-
-        except:
-            pass
-        return None
 
     # ─── Upload with Split ────────────────────────────────────────────────────
 
@@ -616,7 +452,7 @@ class BotInstance:
     def process_zip(self, url, folder_name=""):
         """
         Download a ZIP/RAR (or any archive URL), extract all videos,
-        upload each one. Works with /season command too (no .zip needed in URL).
+        upload each one. Works with /zip and /season commands.
         """
         import shutil
         zip_path = f"/tmp/series_{self.chat_id}.zip"
@@ -690,7 +526,7 @@ class BotInstance:
             self.msg(f"Episode {i}/{len(video_files)} done!")
 
         shutil.rmtree(extract_dir, ignore_errors=True)
-        self.msg(f"SEASON COMPLETE!\n{len(video_files)} episodes upload ho gaye!")
+        self.msg(f"ZIP EXTRACT COMPLETE!\n{len(video_files)} files upload ho gaye!")
 
     # ─── Worker ──────────────────────────────────────────────────────────────
 
@@ -741,7 +577,7 @@ class BotInstance:
                 "Commands:\n"
                 "/checklogin\n"
                 "/status\n"
-                "/season <url>  ← Poora season ek baar\n"
+                "/zip <url>  ← Archive extract karke videos upload\n"
                 "/pause\n"
                 "/resume\n"
                 "/clear\n"
@@ -796,26 +632,25 @@ class BotInstance:
                     break
             self.msg(f"Queue cleared! {count} tasks remove.")
 
-        # ── [NEW] /season command ─────────────────────────────────────────────
-        @bot.message_handler(commands=["season"])
-        def cmd_season(m):
+        # ── [NEW] /zip and /season command ────────────────────────────────────
+        @bot.message_handler(commands=["zip", "season"])
+        def cmd_zip(m):
             if m.chat.id != self.chat_id:
                 return
             parts = m.text.split(None, 1)
             if len(parts) < 2 or not parts[1].strip().startswith("http"):
                 bot.reply_to(
                     m,
-                    "Format:\n/season <url>\n\n"
-                    "Example:\n/season https://example.com/DragonBallZ_S01.zip\n\n"
-                    "URL mein .zip extension zarori nahi\n"
-                    "Bot khud extract karke sab upload karega"
+                    "Format:\n/zip <url>\n\n"
+                    "Example:\n/zip https://example.com/videos.zip\n\n"
+                    "Bot khud extract karke saari videos upload karega"
                 )
                 return
             url = parts[1].strip()
             self.ctx["pending_link"] = url
             self.ctx["pending_type"] = "zip"
             self.ctx["state"] = "WAITING_FOR_FOLDER"
-            bot.reply_to(m, "Season pack link mila!\n\nFolder name bhejein\n(ya 'root' type karo)")
+            bot.reply_to(m, "ZIP / Extract link mila!\n\nFolder name bhejein\n(ya 'root' type karo)")
 
         @bot.message_handler(commands=["cmd"])
         def cmd_shell(m):
@@ -879,7 +714,7 @@ class BotInstance:
 
     def run(self):
         self.register_handlers()
-        self.msg("BOT ONLINE!\n\nDirect / M3U8 / ZIP / /season link bhejein")
+        self.msg("BOT ONLINE!\n\nDirect / M3U8 / ZIP / /zip link bhejein")
         self.bot.infinity_polling()
 
 
